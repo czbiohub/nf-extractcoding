@@ -55,10 +55,6 @@ if (params.help) {
  * SET UP CONFIGURATION VARIABLES
  */
 
-// Check if genome exists in the config file
-if (params.genomes && params.genome && !params.genomes.containsKey(params.genome)) {
-    exit 1, "The provided genome '${params.genome}' is not available in the iGenomes file. Currently the available genomes are ${params.genomes.keySet().join(", ")}"
-}
 
 // TODO nf-core: Add any reference files that are needed
 // Configurable reference genomes
@@ -101,20 +97,37 @@ if (params.readPaths) {
             .from(params.readPaths)
             .map { row -> [ row[0], [ file(row[1][0], checkIfExists: true) ] ] }
             .ifEmpty { exit 1, "params.readPaths was empty - no input files supplied" }
-            .into { read_files_fastqc; read_files_trimming }
+            .into { reads_ch }
     } else {
         Channel
             .from(params.readPaths)
             .map { row -> [ row[0], [ file(row[1][0], checkIfExists: true), file(row[1][1], checkIfExists: true) ] ] }
             .ifEmpty { exit 1, "params.readPaths was empty - no input files supplied" }
-            .into { read_files_fastqc; read_files_trimming }
+            .into { reads_ch }
     }
 } else {
     Channel
         .fromFilePairs( params.reads, size: params.singleEnd ? 1 : 2 )
         .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-        .into { read_files_fastqc; read_files_trimming }
+        .into { reads_ch }
 }
+
+if (params.peptide_fasta) {
+Channel.fromPath(params.peptide_fasta, checkIfExists: true)
+     .ifEmpty { exit 1, "Peptide fasta file not found: ${params.peptide_fasta}" }
+     .set{ ch_peptide_fasta }
+}
+
+
+// Parse the parameters
+peptide_ksizes = params.peptide_ksizes?.toString().tokenize(',')
+alphabets = params.alphabets?.toString().tokenize(',')
+
+int bloomfilter_tablesize = Math.round(Float.valueOf(params.bloomfilter_tablesize))
+
+peptide_ksize = params.extract_coding_peptide_ksize
+peptide_molecule = params.extract_coding_peptide_molecule
+jaccard_threshold = params.extract_coding_jaccard_threshold
 
 // Header log info
 log.info nfcoreHeader()
@@ -241,6 +254,7 @@ process get_software_versions {
    script:
    """
    khtools extract-coding \\
+     --long-reads \\
      --molecule ${molecule} \\
      --peptide-ksize ${peptide_ksize} \\
      --coding-nucleotide-fasta ${sample_id}__coding_reads_nucleotides.fasta \\
