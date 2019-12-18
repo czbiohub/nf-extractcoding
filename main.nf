@@ -194,52 +194,91 @@ process get_software_versions {
 }
 
 /*
- * STEP 1 - FastQC
+ * STEP 1 - Create peptide bloom filter
  */
-process fastqc {
-    tag "$name"
-    label 'process_medium'
-    publishDir "${params.outdir}/fastqc", mode: 'copy',
-        saveAs: { filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename" }
+ process peptide_bloom_filter {
+   tag "${peptides}__${bloom_id}"
+   label "low_memory"
 
-    input:
-    set val(name), file(reads) from read_files_fastqc
+   publishDir "${params.outdir}/bloom_filter", mode: 'copy'
 
-    output:
-    file "*_fastqc.{zip,html}" into fastqc_results
+   input:
+   each peptide_ksize from peptide_ksizes
+   each alphabet from alphabets
+   file(peptides) from ch_peptide_fasta
 
-    script:
-    """
-    fastqc --quiet --threads $task.cpus $reads
-    """
-}
+   output:
+   set val(bloom_id), val(peptide_ksize), val(peptide_molecule), file("${peptides.simpleName}__${bloom_id}.bloomfilter") into ch_khtools_bloom_filter
 
-/*
- * STEP 2 - MultiQC
- */
-process multiqc {
-    publishDir "${params.outdir}/MultiQC", mode: 'copy'
+   script:
+   bloom_id = "molecule-${peptide_molecule}_ksize-${peptide_ksize}"
+   """
+   khtools bloom-filter \\
+     --tablesize ${bloomfilter_tablesize} \\
+     --molecule ${peptide_molecule} \\
+     --peptide-ksize ${peptide_ksize} \\
+     --save-as ${peptides.simpleName}__${bloom_id}.bloomfilter \\
+     ${peptides}
+   """
+ }
 
-    input:
-    file multiqc_config from ch_multiqc_config
-    // TODO nf-core: Add in log files from your new processes for MultiQC to find!
-    file ('fastqc/*') from fastqc_results.collect().ifEmpty([])
-    file ('software_versions/*') from software_versions_yaml.collect()
-    file workflow_summary from create_workflow_summary(summary)
+ process extract_coding {
+   tag "${sample_id}"
+   label "low_memory"
+   publishDir "${params.outdir}/extract_coding/${bloom_id}/", mode: 'copy'
 
-    output:
-    file "*multiqc_report.html" into multiqc_report
-    file "*_data"
-    file "multiqc_plots"
+   input:
+   set bloom_id, molecule, peptide_ksize, file(bloom_filter) from ch_khtools_bloom_filter.collect()
+   set sample_id, file(reads) from reads_ch
 
-    script:
-    rtitle = custom_runName ? "--title \"$custom_runName\"" : ''
-    rfilename = custom_runName ? "--filename " + custom_runName.replaceAll('\\W','_').replaceAll('_+','_') + "_multiqc_report" : ''
-    // TODO nf-core: Specify which MultiQC modules to use with -m for a faster run time
-    """
-    multiqc -f $rtitle $rfilename --config $multiqc_config .
-    """
-}
+   output:
+   // TODO also extract nucleotide sequence of coding reads and do sourmash compute using only DNA on that?
+   set val(sample_id), file("${sample_id}__coding_reads_peptides.fasta") into ch_coding_peptides
+   set val(sample_id), file("${sample_id}__coding_reads_nucleotides.fasta") into ch_coding_nucleotides
+   set val(sample_id), file("${sample_id}__coding_scores.csv") into ch_coding_scores_csv
+   set val(sample_id), file("${sample_id}__coding_summary.json") into ch_coding_scores_json
+
+   script:
+   """
+   khtools extract-coding \\
+     --molecule ${molecule} \\
+     --peptide-ksize ${peptide_ksize} \\
+     --coding-nucleotide-fasta ${sample_id}__coding_reads_nucleotides.fasta \\
+     --csv ${sample_id}__coding_scores.csv \\
+     --json-summary ${sample_id}__coding_summary.json \\
+     --jaccard-threshold ${jaccard_threshold} \\
+     --peptides-are-bloom-filter \\
+     ${bloom_filter} \\
+     ${reads} > ${sample_id}__coding_reads_peptides.fasta
+   """
+ }
+//
+// /*
+//  * STEP 2 - MultiQC
+//  */
+// process multiqc {
+//     publishDir "${params.outdir}/MultiQC", mode: 'copy'
+//
+//     input:
+//     file multiqc_config from ch_multiqc_config
+//     // TODO nf-core: Add in log files from your new processes for MultiQC to find!
+//     file ('fastqc/*') from fastqc_results.collect().ifEmpty([])
+//     file ('software_versions/*') from software_versions_yaml.collect()
+//     file workflow_summary from create_workflow_summary(summary)
+//
+//     output:
+//     file "*multiqc_report.html" into multiqc_report
+//     file "*_data"
+//     file "multiqc_plots"
+//
+//     script:
+//     rtitle = custom_runName ? "--title \"$custom_runName\"" : ''
+//     rfilename = custom_runName ? "--filename " + custom_runName.replaceAll('\\W','_').replaceAll('_+','_') + "_multiqc_report" : ''
+//     // TODO nf-core: Specify which MultiQC modules to use with -m for a faster run time
+//     """
+//     multiqc -f $rtitle $rfilename --config $multiqc_config .
+//     """
+// }
 
 /*
  * STEP 3 - Output Description HTML
