@@ -224,11 +224,11 @@ process get_software_versions {
    set val(bloom_id), val(peptide_ksize), val(peptide_molecule), file("${peptides.simpleName}__${bloom_id}.bloomfilter") into ch_khtools_bloom_filter
 
    script:
-   bloom_id = "molecule-${peptide_molecule}_ksize-${peptide_ksize}"
+   bloom_id = "alphabet-${alphabet}_ksize-${peptide_ksize}"
    """
    khtools bloom-filter \\
      --tablesize ${bloomfilter_tablesize} \\
-     --molecule ${peptide_molecule} \\
+     --molecule ${alphabet} \\
      --peptide-ksize ${peptide_ksize} \\
      --save-as ${peptides.simpleName}__${bloom_id}.bloomfilter \\
      ${peptides}
