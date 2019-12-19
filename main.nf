@@ -211,7 +211,7 @@ process get_software_versions {
  */
  process peptide_bloom_filter {
    tag "${peptides}__${bloom_id}"
-   label "low_memory"
+   label "process_low"
 
    publishDir "${params.outdir}/bloom_filter", mode: 'copy'
 
@@ -237,7 +237,7 @@ process get_software_versions {
 
  process extract_coding {
    tag "${sample_id}"
-   label "low_memory"
+   label "process_low"
    publishDir "${params.outdir}/extract_coding/${bloom_id}/", mode: 'copy'
 
    input:
