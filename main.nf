@@ -122,7 +122,7 @@ Channel.fromPath(params.peptide_fasta, checkIfExists: true)
 // Parse the parameters
 peptide_ksizes = params.peptide_ksizes?.toString().tokenize(',')
 alphabets = params.alphabets?.toString().tokenize(',')
-
+long_reads = params.long_reads
 int bloomfilter_tablesize = Math.round(Float.valueOf(params.bloomfilter_tablesize))
 
 peptide_ksize = params.extract_coding_peptide_ksize
@@ -252,9 +252,10 @@ process get_software_versions {
    set val(sample_id), file("${sample_id}__coding_summary.json") into ch_coding_scores_json
 
    script:
+   long_reads_flag = long_reads ? '--long-reads' : ''
    """
    khtools extract-coding \\
-     --long-reads \\
+     ${long_reads_flag} \\
      --molecule ${molecule} \\
      --peptide-ksize ${peptide_ksize} \\
      --coding-nucleotide-fasta ${sample_id}__coding_reads_nucleotides.fasta \\
