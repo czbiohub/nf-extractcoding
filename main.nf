@@ -241,7 +241,7 @@ process get_software_versions {
    publishDir "${params.outdir}/extract_coding/${bloom_id}/", mode: 'copy'
 
    input:
-   set bloom_id, molecule, peptide_ksize, file(bloom_filter) from ch_khtools_bloom_filter.collect()
+   set bloom_id, molecule, peptide_ksize, file(bloom_filter) from ch_khtools_bloom_filter.groupTuple(by: [0, 2])
    set sample_id, file(reads) from reads_ch
 
    output:
