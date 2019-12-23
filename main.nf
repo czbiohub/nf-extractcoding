@@ -217,7 +217,7 @@ process get_software_versions {
    file(peptides) from ch_peptide_fasta
 
    output:
-   set val(bloom_id), val(peptide_ksize), val(peptide_molecule), file("${peptides.simpleName}__${bloom_id}.bloomfilter") into ch_khtools_bloom_filter
+   set val(bloom_id), val(peptide_ksize), val(alphabet), file("${peptides.simpleName}__${bloom_id}.bloomfilter") into ch_khtools_bloom_filter
 
    script:
    bloom_id = "alphabet-${alphabet}_ksize-${peptide_ksize}"
