@@ -237,30 +237,36 @@ process get_software_versions {
    publishDir "${params.outdir}/extract_coding/${bloom_id}/", mode: 'copy'
 
    input:
-   set bloom_id, molecule, peptide_ksize, file(bloom_filter) from ch_khtools_bloom_filter.groupTuple(by: [0, 2])
-   set sample_id, file(reads) from reads_ch
+   set val(bloom_id), val(peptide_ksize), val(alphabet), file(bloom_filter) \
+      from ch_khtools_bloom_filter.groupTuple(by: [0, 3])
+   each tuple(val(sample_id), file(reads)) from reads_ch
 
    output:
-   // TODO also extract nucleotide sequence of coding reads and do sourmash compute using only DNA on that?
-   set val(sample_id), file("${sample_id}__coding_reads_peptides.fasta") into ch_coding_peptides
-   set val(sample_id), file("${sample_id}__coding_reads_nucleotides.fasta") into ch_coding_nucleotides
-   set val(sample_id), file("${sample_id}__coding_scores.csv") into ch_coding_scores_csv
-   set val(sample_id), file("${sample_id}__coding_summary.json") into ch_coding_scores_json
+   set val(sample_id), file("${prefix}__coding_reads_peptides.fasta") into ch_coding_peptides
+   set val(sample_id), file("${prefix}__coding_reads_nucleotides.fasta") into ch_coding_nucleotides
+   set val(sample_id), file("${prefix}__coding_scores.csv") into ch_coding_scores_csv
+   set val(sample_id), file("${prefix}__coding_summary.json") into ch_coding_scores_json
 
    script:
+   // sample_id = x[0]
+   // reads = file(x[1][0])
    long_reads_flag = long_reads ? '--long-reads' : ''
+   prefix = "${sample_id}__${bloom_id}"
    """
+   echo ${bloom_id}
+   echo ${sample_id}
+   echo ${reads}
    khtools extract-coding \\
      ${long_reads_flag} \\
-     --molecule ${molecule} \\
-     --peptide-ksize ${peptide_ksize} \\
-     --coding-nucleotide-fasta ${sample_id}__coding_reads_nucleotides.fasta \\
-     --csv ${sample_id}__coding_scores.csv \\
-     --json-summary ${sample_id}__coding_summary.json \\
+     --molecule ${alphabet[0]} \\
+     --peptide-ksize ${peptide_ksize[0]} \\
+     --coding-nucleotide-fasta ${prefix}__coding_reads_nucleotides.fasta \\
+     --csv ${prefix}__coding_scores.csv \\
+     --json-summary ${prefix}__coding_summary.json \\
      --jaccard-threshold ${jaccard_threshold} \\
-     --peptides-are-bloom-filter \\
-     ${bloom_filter} \\
-     ${reads} > ${sample_id}__coding_reads_peptides.fasta
+     --peptides-are-bloom-filter ${bloom_filter} \\
+     ${reads} \\
+     > ${prefix}__coding_reads_peptides.fasta
    """
  }
 //
