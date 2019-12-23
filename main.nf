@@ -125,9 +125,7 @@ alphabets = params.alphabets?.toString().tokenize(',')
 long_reads = params.long_reads
 int bloomfilter_tablesize = Math.round(Float.valueOf(params.bloomfilter_tablesize))
 
-peptide_ksize = params.extract_coding_peptide_ksize
-peptide_molecule = params.extract_coding_peptide_molecule
-jaccard_threshold = params.extract_coding_jaccard_threshold
+jaccard_threshold = params.jaccard_threshold
 
 // Header log info
 log.info nfcoreHeader()
@@ -200,8 +198,6 @@ process get_software_versions {
     """
     echo $workflow.manifest.version > v_pipeline.txt
     echo $workflow.nextflow.version > v_nextflow.txt
-    fastqc --version > v_fastqc.txt
-    multiqc --version > v_multiqc.txt
     scrape_software_versions.py &> software_versions_mqc.yaml
     """
 }
