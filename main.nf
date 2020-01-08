@@ -245,7 +245,7 @@ process extract_coding {
 
   input:
   tuple \
-    val(bloom_id), val(peptide_ksize), val(alphabet), file(bloom_filter) \
+    val(bloom_id), val(peptide_ksize), val(alphabet), file(bloom_filter), \
     val(sample_id), file(reads) \
       from combination_ch
 
@@ -278,6 +278,7 @@ process extract_coding {
    > ${prefix}__coding_reads_peptides.fasta
   """
 }
+
 //
 // /*
 //  * STEP 2 - MultiQC
