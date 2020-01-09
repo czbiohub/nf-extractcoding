@@ -55,10 +55,6 @@ if (params.help) {
  * SET UP CONFIGURATION VARIABLES
  */
 
-// Check if genome exists in the config file
-if (params.genomes && params.genome && !params.genomes.containsKey(params.genome)) {
-    exit 1, "The provided genome '${params.genome}' is not available in the iGenomes file. Currently the available genomes are ${params.genomes.keySet().join(", ")}"
-}
 
 // TODO nf-core: Add any reference files that are needed
 // Configurable reference genomes
@@ -101,20 +97,35 @@ if (params.readPaths) {
             .from(params.readPaths)
             .map { row -> [ row[0], [ file(row[1][0], checkIfExists: true) ] ] }
             .ifEmpty { exit 1, "params.readPaths was empty - no input files supplied" }
-            .into { read_files_fastqc; read_files_trimming }
+            .into { reads_ch }
     } else {
         Channel
             .from(params.readPaths)
             .map { row -> [ row[0], [ file(row[1][0], checkIfExists: true), file(row[1][1], checkIfExists: true) ] ] }
             .ifEmpty { exit 1, "params.readPaths was empty - no input files supplied" }
-            .into { read_files_fastqc; read_files_trimming }
+            .into { reads_ch }
     }
 } else {
     Channel
         .fromFilePairs( params.reads, size: params.singleEnd ? 1 : 2 )
         .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-        .into { read_files_fastqc; read_files_trimming }
+        .into { reads_ch }
 }
+
+if (params.peptide_fasta) {
+Channel.fromPath(params.peptide_fasta, checkIfExists: true)
+     .ifEmpty { exit 1, "Peptide fasta file not found: ${params.peptide_fasta}" }
+     .set{ ch_peptide_fasta }
+}
+
+
+// Parse the parameters
+peptide_ksizes = params.peptide_ksizes?.toString().tokenize(',')
+alphabets = params.alphabets?.toString().tokenize(',')
+long_reads = params.long_reads
+int bloomfilter_tablesize = Math.round(Float.valueOf(params.bloomfilter_tablesize))
+
+jaccard_threshold = params.jaccard_threshold
 
 // Header log info
 log.info nfcoreHeader()
@@ -187,59 +198,112 @@ process get_software_versions {
     """
     echo $workflow.manifest.version > v_pipeline.txt
     echo $workflow.nextflow.version > v_nextflow.txt
-    fastqc --version > v_fastqc.txt
-    multiqc --version > v_multiqc.txt
     scrape_software_versions.py &> software_versions_mqc.yaml
     """
 }
 
 /*
- * STEP 1 - FastQC
+ * STEP 1 - Create peptide bloom filter
  */
-process fastqc {
-    tag "$name"
-    label 'process_medium'
-    publishDir "${params.outdir}/fastqc", mode: 'copy',
-        saveAs: { filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename" }
+ process peptide_bloom_filter {
+   tag "${peptides}__${bloom_id}"
+   label "process_low"
 
-    input:
-    set val(name), file(reads) from read_files_fastqc
+   publishDir "${params.outdir}/bloom_filter", mode: 'copy'
 
-    output:
-    file "*_fastqc.{zip,html}" into fastqc_results
+   input:
+   each peptide_ksize from peptide_ksizes
+   each alphabet from alphabets
+   file(peptides) from ch_peptide_fasta
 
-    script:
-    """
-    fastqc --quiet --threads $task.cpus $reads
-    """
+   output:
+   set val(bloom_id), val(peptide_ksize), val(alphabet), file("${peptides.simpleName}__${bloom_id}.bloomfilter") into ch_khtools_bloom_filter
+
+   script:
+   bloom_id = "alphabet-${alphabet}_ksize-${peptide_ksize}"
+   """
+   khtools bloom-filter \\
+     --tablesize ${bloomfilter_tablesize} \\
+     --molecule ${alphabet} \\
+     --peptide-ksize ${peptide_ksize} \\
+     --save-as ${peptides.simpleName}__${bloom_id}.bloomfilter \\
+     ${peptides}
+   """
+ }
+
+// From Paolo - how to do extract_coding on ALL combinations of bloom filters
+ ch_khtools_bloom_filter
+  .groupTuple(by: [0, 3])
+  .combine(reads_ch)
+  .set{ combination_ch }
+
+
+process extract_coding {
+  tag "${sample_id}"
+  label "process_low"
+  publishDir "${params.outdir}/extract_coding/${bloom_id}/", mode: 'copy'
+
+  input:
+  tuple \
+    val(bloom_id), val(peptide_ksize), val(alphabet), file(bloom_filter), \
+    val(sample_id), file(reads) \
+      from combination_ch
+
+  output:
+  // TODO also extract nucleotide sequence of coding reads and do sourmash compute using only DNA on that?
+  // set val(sample_id), file("${prefix}__coding_reads_peptides.fasta") into ch_coding_peptides
+  // set val(sample_id), file("${prefix}__coding_reads_nucleotides.fasta") into ch_coding_nucleotides
+  // set val(sample_id), file("${prefix}__coding_scores.csv") into ch_coding_scores_csv
+  // set val(sample_id), file("${prefix}__coding_summary.json") into ch_coding_scores_json
+
+  script:
+  long_reads_flag = long_reads ? '--long-reads' : ''
+  prefix = "${sample_id}__${bloom_id}"
+  """
+  echo ${bloom_id}
+  echo ${sample_id}
+  echo ${reads}
+  khtools extract-coding \\
+   ${long_reads_flag} \\
+   --molecule ${alphabet[0]} \\
+   --peptide-ksize ${peptide_ksize[0]} \\
+   --coding-nucleotide-fasta ${prefix}__coding_reads_nucleotides.fasta \\
+   --csv ${prefix}__coding_scores.csv \\
+   --json-summary ${prefix}__coding_summary.json \\
+   --jaccard-threshold ${jaccard_threshold} \\
+   --peptides-are-bloom-filter ${bloom_filter} \\
+   ${reads} \\
+   > ${prefix}__coding_reads_peptides.fasta
+  """
 }
 
-/*
- * STEP 2 - MultiQC
- */
-process multiqc {
-    publishDir "${params.outdir}/MultiQC", mode: 'copy'
-
-    input:
-    file multiqc_config from ch_multiqc_config
-    // TODO nf-core: Add in log files from your new processes for MultiQC to find!
-    file ('fastqc/*') from fastqc_results.collect().ifEmpty([])
-    file ('software_versions/*') from software_versions_yaml.collect()
-    file workflow_summary from create_workflow_summary(summary)
-
-    output:
-    file "*multiqc_report.html" into multiqc_report
-    file "*_data"
-    file "multiqc_plots"
-
-    script:
-    rtitle = custom_runName ? "--title \"$custom_runName\"" : ''
-    rfilename = custom_runName ? "--filename " + custom_runName.replaceAll('\\W','_').replaceAll('_+','_') + "_multiqc_report" : ''
-    // TODO nf-core: Specify which MultiQC modules to use with -m for a faster run time
-    """
-    multiqc -f $rtitle $rfilename --config $multiqc_config .
-    """
-}
+//
+// /*
+//  * STEP 2 - MultiQC
+//  */
+// process multiqc {
+//     publishDir "${params.outdir}/MultiQC", mode: 'copy'
+//
+//     input:
+//     file multiqc_config from ch_multiqc_config
+//     // TODO nf-core: Add in log files from your new processes for MultiQC to find!
+//     file ('fastqc/*') from fastqc_results.collect().ifEmpty([])
+//     file ('software_versions/*') from software_versions_yaml.collect()
+//     file workflow_summary from create_workflow_summary(summary)
+//
+//     output:
+//     file "*multiqc_report.html" into multiqc_report
+//     file "*_data"
+//     file "multiqc_plots"
+//
+//     script:
+//     rtitle = custom_runName ? "--title \"$custom_runName\"" : ''
+//     rfilename = custom_runName ? "--filename " + custom_runName.replaceAll('\\W','_').replaceAll('_+','_') + "_multiqc_report" : ''
+//     // TODO nf-core: Specify which MultiQC modules to use with -m for a faster run time
+//     """
+//     multiqc -f $rtitle $rfilename --config $multiqc_config .
+//     """
+// }
 
 /*
  * STEP 3 - Output Description HTML

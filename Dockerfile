@@ -5,3 +5,4 @@ LABEL authors="Olga Botvinnik" \
 COPY environment.yml /
 RUN conda env create -f /environment.yml && conda clean -a
 ENV PATH /opt/conda/envs/nf-core-extractcoding-1.0dev/bin:$PATH
+RUN /opt/conda/envs/nf-core-extractcoding-1.0dev/bin/pip install git+https://github.com/czbiohub/kh-tools.git@olgabot/encodings--long-reads#egg=khtools

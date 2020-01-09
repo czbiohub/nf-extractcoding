@@ -11,3 +11,10 @@ dependencies:
   - bioconda::multiqc=1.7
   - conda-forge::r-markdown=1.1
   - conda-forge::r-base=3.6.1
+  - bioconda::khmer=3.0.0a
+  - conda-forge::gxx_linux-64
+  - pip
+  - pip:
+    # Latest  olgabot/encodings--long-reads commit, manually written to
+    # force rebuilding docker image
+    - git+https://github.com/czbiohub/kh-tools.git@0466ecf#egg=khtools
