@@ -257,7 +257,6 @@ process extract_coding {
   // set val(sample_id), file("${prefix}__coding_summary.json") into ch_coding_scores_json
 
   script:
-  sample_id = x[0]
   long_reads_flag = long_reads ? '--long-reads' : ''
   prefix = "${sample_id}__${bloom_id}"
   """
