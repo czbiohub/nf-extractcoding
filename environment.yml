@@ -15,4 +15,6 @@ dependencies:
   - conda-forge::gxx_linux-64
   - pip
   - pip:
-    - git+https://github.com/czbiohub/kh-tools.git@olgabot/encodings--long-reads#egg=khtools
+    # Latest  olgabot/encodings--long-reads commit, manually written to
+    # force rebuilding docker image
+    - git+https://github.com/czbiohub/kh-tools.git@0466ecf#egg=khtools
