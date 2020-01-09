@@ -262,7 +262,6 @@ process extract_coding {
   prefix = "${sample_id}__${bloom_id}"
   """
   echo ${bloom_id}
-  echo ${x}
   echo ${sample_id}
   echo ${reads}
   khtools extract-coding \\
